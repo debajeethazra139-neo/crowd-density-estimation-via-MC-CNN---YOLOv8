@@ -1,328 +1,297 @@
-Crowd Analyzer Pro: MC-CNN + YOLOv8 Crowd Density and Stampede Risk Monitor
-Crowd Analyzer Pro is a desktop application for real-time crowd analysis that combines a density-based MC-CNN model with YOLOv8 person detection inside a modern PyQt6 GUI. It estimates crowd size, visualizes density as a heatmap, measures motion speed, and classifies the scene into risk levels such as overcrowding and stampede-prone.
+# Crowd Analyzer Pro
 
-1. Key Features
-Dual-model fusion
+Crowd Analyzer Pro is a desktop application for real-time crowd analysis that combines a density-based **MC-CNN** model with **YOLOv8** person detection inside a modern **PyQt6 GUI**. It estimates crowd size, visualizes density as a heatmap, measures motion speed, and classifies the scene into risk levels such as overcrowding and stampede-prone situations.
 
-MC-CNN density regression for dense crowds with heavy occlusion.
+---
 
-YOLOv8 person detection for sparse or moderately crowded scenes.
+## Features
 
-Automatic cross-model calibration
+- **Dual-model fusion**
+  - MC-CNN density regression for dense crowds with heavy occlusion.
+  - YOLOv8 person detection for sparse or moderately crowded scenes.
 
-Uses YOLOv8 counts over the first N frames to calibrate MC-CNN raw density outputs into realistic person counts.
+- **Automatic cross-model calibration**
+  - Uses YOLOv8 counts over the first calibration frames to map MC-CNN raw density outputs into realistic person counts.
 
-Adaptive operating modes
+- **Adaptive operating modes**
+  - **SPARSE**: uses YOLOv8 counts as the primary estimate.
+  - **DENSE**: uses MC-CNN density map as the primary estimate.
+  - **UNKNOWN**: fuses MC-CNN and YOLOv8 estimates.
 
-SPARSE: use YOLOv8 counts as the primary density estimate.
+- **Risk and safety analytics**
+  - Computes average motion speed from frame-to-frame displacement.
+  - Flags overcrowding, occupancy percentage, and stampede-prone situations based on configurable thresholds.
 
-DENSE: use MC-CNN density map (heatmap overlay) as the primary estimate.
+- **Modern PyQt6 GUI**
+  - Video selection, live visualization, progress bar, and real-time stats panel.
+  - Smooth playback via frame buffering.
 
-UNKNOWN: fuse both (average of calibrated MC-CNN and YOLOv8) to handle intermediate conditions.
+---
 
-Risk and safety analytics
+## System Overview
 
-Computes average motion speed from frame-to-frame displacement of detected persons.
+### Input
+- User selects a video file (`.mp4`, `.avi`, `.mkv`, `.mov`) from the GUI.
+- Frames are read using **OpenCV**.
 
-Flags overcrowding, occupancy percentage, and stampede-prone situations based on configurable density and speed thresholds.
+### Model Loading
+- **MC-CNN** is loaded from `crowd_counting.pth`.
+- **YOLOv8** is loaded from `yolov8n.pt` or another supported variant.
 
-Modern PyQt6 GUI
+### Auto-Calibration
+During the first calibration frames:
 
-Video selection, live visualization, progress bar, and real-time stats panel.
+- YOLOv8 detects persons and provides a detection-based count.
+- MC-CNN predicts a density map and the raw sum is computed.
+- A calibration factor is derived from the ratio between YOLO counts and MC-CNN raw sums.
 
-Smooth playback via frame buffering for a better user experience.
+### Analysis Loop
+- Frames are processed in a background **QThread** to keep the GUI responsive.
+- YOLOv8 runs on every frame for bounding boxes and speed estimation.
+- MC-CNN optionally generates a density heatmap depending on mode.
+- Final crowd density comes from YOLOv8, MC-CNN, or a fusion of both.
 
-2. System Overview
-2.1 Pipeline
-Input
+### Risk Evaluation
+- **Overcrowding** is flagged when estimated count exceeds the density threshold.
+- **Average speed** is computed from center-point displacement of detections.
+- A scene is considered **stampede-prone** when it is overcrowded and the average speed is below or equal to the configured threshold.
+- Risk is displayed as **LOW**, **MEDIUM**, or **HIGH**.
 
-User selects a video file (.mp4, .avi, .mkv, .mov) from the GUI file dialog.
+---
 
-Frames are read using OpenCV.
+## Models Used
 
-Model loading
+### MC-CNN
+Inspired by the paper *Single-Image Crowd Counting via Multi-Column Convolutional Neural Network (MCNN)*.
 
-MC-CNN is loaded from crowd_counting.pth.
+- Uses three parallel convolutional columns with different receptive fields.
+- Handles scale variation in dense crowds.
+- Outputs a single-channel density map.
+- Final count estimate is:
 
-Ultralytics YOLOv8 is loaded from yolov8n.pt (or another YOLOv8 variant).
+```text
+sum(density_map) * calibration_factor
+```
 
-Auto-calibration (first 60 frames)
+### YOLOv8
+Uses **Ultralytics YOLOv8** for real-time person detection.
 
-For each calibration frame:
+- Default model: `yolov8n.pt`
+- Only **person class (class 0)** is used.
+- Produces bounding boxes and center points.
+- Center-point displacement is used to estimate motion speed. Ultralytics documents YOLOv8 as a real-time object detection framework, and YOLO datasets use zero-indexed class numbering. [web:78][web:75]
 
-YOLOv8 detects persons and provides a detection-based count.
+---
 
-MC-CNN predicts a density map and the raw sum of densities is computed.
+## Modes
 
-The ratio between YOLO counts and MC-CNN raw sums across calibration frames is used to derive a calibration factor, scaled by a constant, to map MC-CNN outputs to approximate person counts.
-
-Analysis loop
-
-Frames are processed in a background QThread (VideoProcessor) to keep the GUI responsive.
-
-YOLOv8 runs on every frame to draw green bounding boxes and compute motion speed.
-
-Depending on the selected mode, MC-CNN may also produce a density map and heatmap overlay.
-
-The final “density” value (crowd count estimate) comes from YOLO, MC-CNN, or their fusion depending on mode.
-
-Risk evaluation
-
-Overcrowding is flagged when estimated count exceeds the user-defined density threshold.
-
-Average speed is computed from center-point displacement of detections between frames.
-
-A scene is considered stampede-prone when it is overcrowded AND the average speed is below or equal to a configurable threshold (indicating a dense, slow-moving or stalled crowd).
-
-Risk is summarized as LOW, MEDIUM, or HIGH, and displayed live.
-
-Visualization
-
-The GUI displays the processed frame with overlays and a live stats panel showing counts, speeds, occupancy, risk labels, and calibration factor.
-
-3. Models Used
-3.1 MC-CNN (Multi-Column CNN)
-Inspired by “Single-Image Crowd Counting via Multi-Column Convolutional Neural Network (MCNN)”.
-
-Consists of three parallel convolutional columns with different receptive fields to handle varying scales.
-
-Outputs a single-channel density map; integrating this map gives an estimate of the number of people.
-
-In this project:
-
-Input: RGB frame resized to (768, 512), normalized to [0, 1].
-
-Output: density map with the same spatial size (after upsampling if needed).
-
-Final count estimate is sum(density_map) * calibration_factor.
-
-3.2 YOLOv8 (Ultralytics)
-Lightweight YOLOv8 model (yolov8n.pt by default) used for real-time person detection.
-
-Only the person class (class 0) is used for detection.
-
-Outputs are bounding boxes, confidences, and class IDs.
-
-In this project:
-
-Each detection yields a bounding box and a center point.
-
-Frame-to-frame displacement of centers is used to estimate per-target speed (in pixels per frame).
-
-The number of detected persons provides a direct count in SPARSE mode, and also supervises the MC-CNN calibration.
-
-4. Risk Logic and Modes
-4.1 Modes
-SPARSE mode
-
+### SPARSE
+```text
 primary_count = YOLO_count
+```
 
-Best for videos where individuals are well separated and detection is reliable.
+Best for scenes where individuals are clearly separated.
 
-DENSE mode
-
+### DENSE
+```text
 primary_count = calibrated_MCNN_count
+```
 
-MC-CNN density map is visualized as a heatmap blended with the original frame.
+Best for dense or heavily occluded scenes. A heatmap is overlaid on the original frame.
 
-Preferred for very dense or heavily occluded crowds where detection may fail.
-
-UNKNOWN mode
-
+### UNKNOWN
+```text
 primary_count = (calibrated_MCNN_count + YOLO_count) / 2
+```
 
-Uses fusion to hedge between density and detection.
+Best for intermediate crowd conditions.
 
-4.2 Overcrowding and Stampede Logic
-Overcrowding
+---
 
-Determined by comparing primary_count to the Density Threshold set in the GUI.
+## Risk Logic
 
-Occupancy (%) is computed as:
+### Overcrowding
+Overcrowding is determined by comparing `primary_count` to the user-defined **Density Threshold**.
 
-occupancy = min(100, (primary_count / density_threshold) * 100).
+### Occupancy
+```text
+occupancy = min(100, (primary_count / density_threshold) * 100)
+```
 
-Average speed
+### Risk Categories
+- **High Risk**: overcrowded and average speed is less than or equal to the speed threshold.
+- **Medium Risk**: overcrowded but not stampede-prone.
+- **Low Risk**: not overcrowded.
 
-Mean of per-person speeds (pixel displacement between frames) for each frame.
+---
 
-If no persons are detected, speed is reported as 0.
+## GUI
 
-Risk categorization
+The PyQt6 interface provides:
 
-If average speed is very low (e.g., < 1.0), the system reports low or medium risk depending on overcrowding.
+### Video Controls
+- **Select Video**: choose a video file.
+- **Start Analysis**: start processing.
+- **Stop**: stop analysis and release resources.
 
-If speed is higher, risk is upgraded:
+### Settings Panel
+- **Mode**: SPARSE / DENSE / UNKNOWN
+- **Density Threshold**
+- **Speed Threshold**
 
-Overcrowded and average speed ≤ speed threshold → High risk, Stampede-prone.
+### Main Display
+- Processed video frames
+- YOLOv8 bounding boxes
+- Optional MC-CNN heatmap
+- Live statistics panel showing:
+  - Density
+  - MCNN and YOLO counts
+  - Average speed
+  - Occupancy
+  - Risk level
+  - Overcrowding status
+  - Stampede status
+  - Calibration factor
+  - Current mode
 
-Overcrowded but speed above threshold → Medium risk, not stampede-prone.
+### Logging Area
+Displays:
+- Device selection
+- Model loading
+- Calibration progress
+- Buffering status
+- Playback events
 
-Not overcrowded → Low risk, not stampede-prone.
+---
 
-5. GUI and User Controls
-The GUI is implemented with PyQt6 and provides:
+## Installation
 
-Video Controls
+### Requirements
+- Python 3.10+
+- PyTorch
+- Ultralytics YOLO
+- OpenCV
+- PyQt6
+- NumPy
 
-Select Video: open a file dialog to choose a video.
+### Setup
 
-Start Analysis: launch the VideoProcessor thread to begin processing.
-
-Stop: stop processing and release resources.
-
-Settings Panel
-
-Mode: choose between SPARSE, DENSE, and UNKNOWN.
-
-Density Threshold: numeric threshold for overcrowding detection (default 8.0; adjust based on scene).
-
-Speed Threshold (≤ for STAMPEDE): threshold on average speed used when deciding stampede-prone situations.
-
-Main Display
-
-Large video pane showing the processed frame with:
-
-YOLOv8 person bounding boxes and per-target speeds.
-
-Optional MC-CNN density heatmap overlay (in DENSE/UNKNOWN modes).
-
-Right-hand stats panel with live text for:
-
-Density (current crowd count estimate)
-
-MCNN and YOLO counts
-
-Average speed
-
-Occupancy percentage
-
-Risk level
-
-Overcrowding status
-
-Stampede status
-
-Calibration factor
-
-Current mode
-
-Progress bar indicating current frame vs total frames.
-
-Logging area
-
-Text log showing device selection, model loading, calibration progress, buffering, and playback status.
-
-The video processing runs in a dedicated QThread to keep the GUI responsive, which is a standard pattern in PyQt-based vision applications.
-
-6. Installation
-6.1 Requirements
-Python 3.10+
-
-PyTorch (with CUDA if GPU acceleration is desired)
-
-Ultralytics YOLO
-
-OpenCV
-
-PyQt6
-
-NumPy
-
-6.2 Setup
-bash
-git clone https://github.com/<debajeethazra139-neo>/<crowd-density-estimation-via-MC-CNN---YOLOv8>.git
-cd <crowd-density-estimation-via-MC-CNN---YOLOv8>
-
+```bash
+git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
+cd YOUR_REPOSITORY
 python -m venv venv
-# Windows:
+```
+
+### Activate Virtual Environment
+
+**Windows**
+```bash
 venv\Scripts\activate
-# Linux/Mac:
+```
+
+**Linux / Mac**
+```bash
 source venv/bin/activate
+```
 
+### Install Dependencies
+
+```bash
 pip install -r requirements.txt
-Typical requirements.txt entries (adapt as needed):
+```
 
-text
+### Typical `requirements.txt`
+
+```txt
 torch
 torchvision
 ultralytics
 opencv-python
 numpy
 PyQt6
-Place your trained MC-CNN weights and YOLO weights in the project directory:
+```
 
-crowd_counting.pth – MC-CNN weights
+### Required Model Files
+Place these files in the project directory:
 
-yolov8n.pt – YOLOv8 model file (or adjust the path in the code)
+- `crowd_counting.pth` — MC-CNN weights
+- `yolov8n.pt` — YOLOv8 model file, or update the code to use another YOLOv8 variant
 
-7. Usage
-Run the GUI
-bash
-python <your_main_file>.py
-Steps in the app:
+---
 
-Click Select Video and choose a crowd video.
+## Usage
 
-Choose the Mode (SPARSE / DENSE / UNKNOWN).
+Run the app:
 
-Adjust Density Threshold and Speed Threshold if needed.
+```bash
+python crowd_analyzer.py
+```
 
-Click Start Analysis.
+### Steps
+1. Click **Select Video**
+2. Choose a crowd video
+3. Select **SPARSE**, **DENSE**, or **UNKNOWN**
+4. Adjust thresholds if needed
+5. Click **Start Analysis**
 
 The app will:
 
-Load the models.
+- Load the models
+- Auto-calibrate MC-CNN
+- Buffer frames for smooth playback
+- Display annotated frames with live statistics
 
-Auto-calibrate MC-CNN using the first 60 frames.
+Click **Stop** to halt analysis.
 
-Buffer 30 frames for smooth playback.
+---
 
-Start displaying annotated frames with live stats.
+## Project Structure
 
-Click Stop to halt analysis.
-
-8. Project Structure (example)
-text
+```text
 .
-├── crowd_analyzer.py         # Main GUI and VideoProcessor (PyQt6 app)
-├── crowd_counting.pth        # MC-CNN trained weights
-├── yolov8n.pt                # YOLOv8 model file (or other variant)
+├── crowd_analyzer.py      # Main GUI and VideoProcessor
+├── crowd_counting.pth     # MC-CNN trained weights
+├── yolov8n.pt             # YOLOv8 model
 ├── requirements.txt
 └── README.md
-Adjust this section if you split the code into multiple modules.
+```
 
-9. Datasets and Training (Optional)
-If you trained MC-CNN or fine-tuned YOLOv8 yourself, briefly describe:
+---
 
-MC-CNN training dataset and procedure
+## Datasets and Training
 
-e.g., ShanghaiTech Part A/B with density map generation via Gaussian kernels.
+If you trained MC-CNN or fine-tuned YOLOv8 yourself, include details such as:
 
-YOLOv8 training / fine-tuning
+- MC-CNN training dataset and procedure
+- Density map generation method
+- YOLOv8 fine-tuning dataset
+- Hyperparameters used
+- Whether YOLOv8 is pre-trained or custom-trained
 
-Dataset type (COCO-based, custom surveillance data, etc.) and hyperparameters.
+---
 
-If you used pre-trained YOLOv8 (COCO), mention that it is used as-is for the person class.
+## Limitations
 
-10. Limitations and Future Work
-MC-CNN calibration is derived from YOLOv8 and may be sensitive to detection quality in the initial frames.
+- MC-CNN calibration depends on YOLOv8 quality during initial frames.
+- Speed is measured in **pixels per frame**, not real-world units.
+- No explicit multi-object tracker is used.
+- Temporary detection indices may reduce motion consistency.
 
-Speed is measured in pixels per frame, not physical units; different camera setups may require different thresholds.
+---
 
-No explicit multi-object tracking ID; center-based speed uses temporary indices within a frame.
+## Future Improvements
 
-Potential improvements:
+- Add a tracker such as **DeepSORT** for better speed estimation
+- Add ROI-based or zone-based density analysis
+- Add support for live RTSP streams
+- Save logs and alert history
+- Export reports for post-event analysis
 
-Add a proper multi-object tracker (e.g., DeepSORT) to get more stable speed estimates.
+---
 
-Add ROI-based or zone-based density analysis.
+## References
 
-Add support for live RTSP streams and saving risk logs.
-
-11. References
-MC-CNN crowd counting papers and implementations.
-
-Ultralytics YOLOv8 documentation and examples.
-
+- MC-CNN crowd counting research
+- Ultralytics YOLOv8 documentation
+- Crowd density estimation and surveillance analytics literature
 General tutorials and surveys on crowd counting and density estimation.
