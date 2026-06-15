@@ -1,34 +1,7 @@
-
-Operating system
-
-- Windows 10/11, Ubuntu 20.04+ or equivalent desktop OS
-
-Python
-
-- Python 3.9 or 3.10 (recommended)
-​
-
-Hardware
-
-- CPU: modern x64 processor
-
-- RAM: 8 GB or more
-
-- GPU: NVIDIA GPU with CUDA support recommended for real-time YOLOv8 and MC-CNN inference
-
-Python packages (installed via pip install -r requirements.txt)
-
-- torch and torchvision (matching versions for your CUDA / CPU setup)
-
-- ultralytics (YOLOv8)
-
-- opencv-python
-
-- numpy
-
-- PyQt6
-
-Optional (only if you plan to extend or package the app):
-
-- pyinstaller for building a standalone executable
+torch
+torchvision
+ultralytics
+opencv-python
+numpy
+PyQt6ng a standalone executable
 ​
